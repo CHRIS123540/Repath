@@ -26,7 +26,8 @@ port-add 17/0 40G NONE
 an-set -/- 2
 port-enb -/- 
 
-
+rate-period 1
+rate-show
 ```
 
 ***网卡工具***
