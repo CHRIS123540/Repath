@@ -286,7 +286,7 @@ main(int argc, char *argv[])
 	nb_ports = rte_eth_dev_count_avail();
 	printf("NUM PORT %d\n",nb_ports);
 	if (nb_ports < 2 || (nb_ports & 1))
-	//	rte_exit(EXIT_FAILURE, "Error: number of ports must be even\n");
+		rte_exit(EXIT_FAILURE, "Error: number of ports must be even\n");
 
 	/* Creates a new mempool in memory to hold the mbufs. */
 	mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS * nb_ports,
