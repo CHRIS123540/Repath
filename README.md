@@ -161,11 +161,13 @@ Ctrl s 或者Ctrl a/ b/c  (我没用上）
 密码:0penBmc    (我没用上）
 出现如下界面后
 ![](./image/1709044602271.jpg)
+
 输入以下两条命令
 echo 0 > /sys/class/i2c-adapter/i2c-12/12-0031/pwr_main_n
 echo 1 > /sys/class/i2c-adapter/i2c-12/12-0031/pwr_main_n; sol.sh
 等运行完毕，界面如下
-![这是一个示例图片](./image/微信图片_20240306184612.jpg)
+!![](./image/微信图片_20240306184612.jpg)
+
 输入P4交换机的用户名和密码
 打开交换机
 
