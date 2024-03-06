@@ -160,12 +160,12 @@ exit
 Ctrl s 或者Ctrl a/ b/c  (我没用上）
 密码:0penBmc    (我没用上）
 出现如下界面后
-![0085b7d08d4b43dd89219a403c56e3e](https://github.com/CHRIS123540/Repath/assets/130374662/110adc33-4b50-4fbe-824e-e5d03ba5154b)
+![微信图片_20240306184459](https://github.com/CHRIS123540/Repath/assets/130374662/d71a48cc-c3d5-4934-a81b-8a90d582e579)
 输入以下两条命令
 echo 0 > /sys/class/i2c-adapter/i2c-12/12-0031/pwr_main_n
 echo 1 > /sys/class/i2c-adapter/i2c-12/12-0031/pwr_main_n; sol.sh
 等运行完毕，界面如下
-![1cc9f149d3efb32b89e00ea3c5e5f0b](https://github.com/CHRIS123540/Repath/assets/130374662/9929c498-78f8-4140-b84f-4954075800fe)
+![微信图片_20240306184612](https://github.com/CHRIS123540/Repath/assets/130374662/453d743e-8759-45df-80dc-9f8112665555)
 输入P4交换机的用户名和密码
 打开交换机
 
