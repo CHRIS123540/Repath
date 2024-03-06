@@ -160,7 +160,7 @@ exit
 Ctrl s 或者Ctrl a/ b/c  (我没用上）
 密码:0penBmc    (我没用上）
 出现如下界面后
-![image](https://github.com/CHRIS123540/Repath/assets/130374662/e5410748-5bb4-45ca-bce4-e0c7573022c1)
+![](./image/1709044602271.jpg)
 输入以下两条命令
 echo 0 > /sys/class/i2c-adapter/i2c-12/12-0031/pwr_main_n
 echo 1 > /sys/class/i2c-adapter/i2c-12/12-0031/pwr_main_n; sol.sh
