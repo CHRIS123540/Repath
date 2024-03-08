@@ -169,7 +169,7 @@ echo 0 > /sys/class/i2c-adapter/i2c-12/12-0031/pwr_main_n
 echo 1 > /sys/class/i2c-adapter/i2c-12/12-0031/pwr_main_n; sol.sh
 ```
 等运行完毕，界面如下
-![image](https://github.com/CHRIS123540/Repath/blob/main/image/%E5%BE%AE%E4%BF%A1%E5%9B%BE%E7%89%87_20240306184459.png)
+![image](https://github.com/CHRIS123540/Repath/blob/main/image/%E5%BE%AE%E4%BF%A1%E5%9B%BE%E7%89%87_20240306184612.png)
 
 输入P4交换机的用户名和密码
 打开交换机
