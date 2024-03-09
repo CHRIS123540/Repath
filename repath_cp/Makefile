@@ -4,8 +4,11 @@
 # binary name
 APP = hopa_cp
 
+INCLUDE_PATHS := -I$(PWD)/include
+CFLAGS += $(INCLUDE_PATHS)
+
 # all source are stored in SRCS-y
-SRCS-y := hopa_cp.c
+SRCS-y := src/hopa_cp.c
 
 
 PKGCONF ?= pkg-config
