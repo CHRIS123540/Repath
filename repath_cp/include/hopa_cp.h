@@ -7,18 +7,10 @@
 #include <rte_ring.h>
 #include <rte_mbuf.h>
 #include <rte_malloc.h>
+#include <rte_timer.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <time.h>
-
-#define DEF_SENDER 1
-
-#define RX_RING_SIZE 1024
-#define TX_RING_SIZE 1024
-
-#define NUM_MBUFS 8191
-#define MBUF_CACHE_SIZE 250
-#define BURST_SIZE 32
 
 #define IPV4_ADDR(a, b, c, d) (((a & 0xff) << 24) | ((b & 0xff) << 16) | ((c & 0xff) << 8) | (d & 0xff))
 
@@ -27,6 +19,20 @@
                                       (int)((ip_addr) >> 16) & 0xFF, \
                                       (int)((ip_addr) >> 8) & 0xFF,  \
                                       (int)(ip_addr) & 0xFF)
+
+/* DPDK param */
+
+#define RX_RING_SIZE (1024)
+#define TX_RING_SIZE (1024)
+#define NUM_MBUFS (8191)
+#define MBUF_CACHE_SIZE (250)
+#define BURST_SIZE (32)
+
+/* HOPA param */
+
+#define DEF_SENDER (1)
+
+#define PROBE_GAP (300)
 
 /* MAC addr */
 #define SRC_MAC                            \
@@ -50,15 +56,10 @@
 #define DST_PORT_PATH_1 (5678)
 
 /* P0 port id */
-#define PORT_P0 0
+#define PORT_P0 (0)
 
-/* timestamp */
-struct timespec ts;
-uint64_t sender_ts;
-uint64_t receiver_ts;
-
-/* optimal path id */
-uint8_t opt_path_id;
+/* 预设比例 r */
+#define R (0.5)
 
 enum hopa_module
 {
@@ -79,19 +80,35 @@ struct hopa_in_out_ring
     struct rte_ring *hopa_out_ring;
 };
 
-/* HOPA parameters */
+/* HOPA cli parameters */
 struct hopa_param
 {
     int is_sender; /* 1 -> sender. 0 -> receiver. */
 };
 
 /* 4 paths delta time */
-struct path_delta_time
+struct path_info
 {
-    uint64_t delta_time_ts[PATH_NB];
-};
+    uint64_t max_dt; // 最大时间差
+    uint64_t min_dt; // 最小时间差
+    
+    uint64_t last_3_dt_grad;
+    uint64_t last_2_dt_grad;
+    uint64_t last_1_dt_grad;
+    uint64_t cur_dt_grad;
 
-struct path_delta_time *path_delta_time;
+    uint64_t last_3_dt;
+    uint64_t last_2_dt;
+    uint64_t last_1_dt;
+    uint64_t cur_dt;
+
+    uint64_t cur_ts;
+    uint64_t last_ts;
+
+    uint64_t thres_dt;
+
+    uint64_t delta_t;
+};
 
 /* HOPA CP Header */
 struct hopa_cp_hdr
@@ -135,6 +152,12 @@ static struct rte_mbuf *encode_repath_ack_pkt();
 static void hopa_cp_probe_pkt_progress(struct rte_mbuf *hopa_cp_mbuf);
 static void hopa_cp_repath_pkt_progress(struct rte_mbuf *hopa_cp_mbuf);
 static void hopa_cp_repath_ack_pkt_progress(struct rte_mbuf *hopa_cp_mbuf);
+
+/* check */
+static int repath_check();
+
+/* timer */
+static void timer_cb(__rte_unused struct rte_timer *timer, __rte_unused void *arg);
 
 /* lcore funcation */
 static int lcore_probe(__rte_unused void *arg);

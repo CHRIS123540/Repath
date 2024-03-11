@@ -2,7 +2,16 @@
 
 /* Mempool */
 struct rte_mempool *mbuf_pool = NULL;
+
 struct hopa_in_out_ring *hopa_in_out_ring_ins = NULL;
+
+/* 4 paths info */
+struct path_info *path_info_list[PATH_NB];
+
+/* optimal path id */
+uint8_t opt_path_id = 1;
+
+struct rte_timer retran_timer; // 重传定时器
 
 static struct hopa_in_out_ring *get_ring_instance(void)
 {
@@ -206,6 +215,7 @@ static struct rte_mbuf *encode_probe_pkt(uint8_t path_id)
 {
 	struct rte_mbuf *mbuf;
 	struct hopa_cp_hdr *hopa_cp_hdr;
+	uint64_t sender_ts;
 
 	mbuf = encode_udp_pkt(DST_PORT_PATH_1 - 1 + path_id);
 
@@ -218,6 +228,7 @@ static struct rte_mbuf *encode_probe_pkt(uint8_t path_id)
 	hopa_cp_hdr->seq = 0;
 	hopa_cp_hdr->ack = 0;
 
+	struct timespec ts;
 	if (clock_gettime(0, &ts) == 0)
 	{
 		sender_ts = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
@@ -271,6 +282,8 @@ static void hopa_cp_probe_pkt_progress(struct rte_mbuf *hopa_cp_mbuf)
 	struct rte_ipv4_hdr *ipv4_hdr;
 	struct rte_udp_hdr *udp_hdr;
 	struct hopa_cp_hdr *hopa_cp_hdr;
+	uint64_t sender_ts;
+	uint64_t receiver_ts;
 
 	ipv4_hdr = rte_pktmbuf_mtod_offset(hopa_cp_mbuf, struct rte_ipv4_hdr *, sizeof(struct rte_ether_hdr));
 	udp_hdr = (struct rte_udp_hdr *)(ipv4_hdr + 1);
@@ -281,42 +294,95 @@ static void hopa_cp_probe_pkt_progress(struct rte_mbuf *hopa_cp_mbuf)
 	sender_ts = rte_be_to_cpu_64(hopa_cp_hdr->ts);
 	printf("sender ts (ns) : %" PRIu64 "\n", sender_ts);
 
+	struct timespec ts;
 	if (clock_gettime(0, &ts) == 0)
 	{
 		receiver_ts = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
 		printf("receiver ts (ns) : %" PRIu64 "\n", receiver_ts);
 	}
 	else
-	{
 		rte_exit(EXIT_FAILURE, "Error with clock_gettime\n");
-	}
 
 	if (receiver_ts > sender_ts)
-		path_delta_time->delta_time_ts[path_id] = receiver_ts - sender_ts;
+		path_info_list[path_id]->cur_dt = receiver_ts - sender_ts;
 	else
-		path_delta_time->delta_time_ts[path_id] = sender_ts - receiver_ts;
+		path_info_list[path_id]->cur_dt = sender_ts - receiver_ts;
 
-	printf("path id : %d , sub (ns) : %" PRIu64 "\n", path_id + 1, path_delta_time->delta_time_ts[path_id]);
+	printf("path id : %d , sub (ns) : %" PRIu64 "\n", path_id + 1, path_info_list[path_id]->cur_dt);
 
-	// TODO   梯度检测算法
+	// TODO   检测算法
+	int repath_id = repath_check();
+	if (repath_id != -1 && repath_id > 0)
+	{
+		struct rte_mbuf *repath_mbuf;
+		repath_mbuf = encode_repath_pkt((uint8_t)repath_id);
+		rte_ring_mp_enqueue_burst(hopa_in_out_ring_ins->hopa_out_ring, (void **)&repath_mbuf, 1, NULL);
+	}
+}
+
+static void timer_cb(__rte_unused struct rte_timer *timer, __rte_unused void *arg)
+{
+	printf("timer out\n");
+	rte_timer_reset(&retran_timer, rte_get_timer_hz() * 0.1, SINGLE, rte_lcore_id(), timer_cb, arg);
 }
 
 static void hopa_cp_repath_pkt_progress(struct rte_mbuf *hopa_cp_mbuf)
 {
-	// TODO
-	// 1、触发换路  TODO
-	
-	// 2、回复repath ACK
+	// 1、触发换路(通知数据面 DP)  TODO
+
+	// 2、回复repath_ack
 	struct rte_mbuf *repath_ack_mbuf;
 	repath_ack_mbuf = encode_repath_ack_pkt();
-	rte_ring_mp_enqueue_burst(hopa_in_out_ring_ins->hopa_out_ring, (void **)&repath_ack_mbuf, PATH_NB, NULL);
-	
-	// 3、启动定时器  TODO
+	rte_ring_mp_enqueue_burst(hopa_in_out_ring_ins->hopa_out_ring, (void **)&repath_ack_mbuf, 1, NULL);
+
+	// 3、启动定时器  TODO   收端初始化定时器
+	rte_timer_reset(&retran_timer, rte_get_timer_hz() * 2, SINGLE, rte_lcore_id(), timer_cb, NULL);
 }
 
 static void hopa_cp_repath_ack_pkt_progress(struct rte_mbuf *hopa_cp_mbuf)
 {
-	// TODO   确认上一个repath已经收到，停止定时器
+	// TODO   收到ack, 确认上一个repath已经收到, 停止定时器
+	rte_timer_stop(&retran_timer);
+}
+
+static int repath_check()
+{
+	printf("check pkt\n");
+
+	int i;
+
+	for (i = 0; i < PATH_NB; i++)
+	{
+		path_info_list[i]->delta_t = path_info_list[i]->cur_ts - path_info_list[i]->last_ts;
+		/* 计算 max_dt min_dt */
+		if (path_info_list[i]->cur_dt > path_info_list[i]->max_dt)
+			path_info_list[i]->max_dt = path_info_list[i]->cur_dt;
+		if (path_info_list[i]->cur_dt < path_info_list[i]->min_dt)
+			path_info_list[i]->min_dt = path_info_list[i]->cur_dt;
+
+		/* 计算 绝对取值 */
+
+		/* 浮点！！！ */
+
+		path_info_list[i]->thres_dt = path_info_list[i]->min_dt + R * (path_info_list[i]->max_dt - path_info_list[i]->min_dt);
+
+		/* 计算 相对取值 */
+
+		/* 浮点！！！ */
+
+		path_info_list[i]->cur_dt_grad = (path_info_list[i]->cur_dt - path_info_list[i]->last_1_dt) / path_info_list[i]->delta_t;
+
+		bool b1 = path_info_list[i]->cur_dt >= path_info_list[i]->thres_dt;
+		bool b2 = 2 * path_info_list[i]->last_3_dt >= (path_info_list[i]->thres_dt - path_info_list[i]->min_dt);
+		bool b3 = path_info_list[i]->last_1_dt_grad > 0 && path_info_list[i]->last_2_dt_grad > 0 && path_info_list[i]->last_3_dt_grad > 0;
+		bool b4 = path_info_list[i]->cur_dt_grad >= (path_info_list[i]->thres_dt - path_info_list[i]->min_dt) / (2 * path_info_list[i]->delta_t);
+		if (b1 || (b2 && b3) || b4)
+		{
+			return i + 1;
+		}
+	}
+
+	return 0;
 }
 
 static int
@@ -324,13 +390,7 @@ lcore_probe(__rte_unused void *arg)
 {
 
 	unsigned i;
-	struct rte_eth_dev_tx_buffer *buffer;
 	struct rte_mbuf *mbufs[PATH_NB];
-
-	struct rte_ether_hdr *eth_hdr;
-	struct rte_ipv4_hdr *ipv4_hdr;
-	struct rte_udp_hdr *udp_hdr;
-	struct hopa_cp_hdr *hopa_cp_hdr;
 
 	while (1)
 	{
@@ -339,8 +399,8 @@ lcore_probe(__rte_unused void *arg)
 
 		rte_ring_mp_enqueue_burst(hopa_in_out_ring_ins->hopa_out_ring, (void **)&mbufs, PATH_NB, NULL);
 
-		// usleep(300000);
-		sleep(2);
+		// usleep(PROBE_GAP * 1000);
+		sleep(2); // for test
 	}
 }
 
@@ -351,15 +411,36 @@ lcore_stats(__rte_unused void *arg)
 	uint16_t nb_rx;
 	uint16_t i;
 
-	path_delta_time = (struct path_delta_time *)malloc(sizeof(struct path_delta_time));
+	/* timer init */
+	rte_timer_subsystem_init();
+	rte_timer_init(&retran_timer);
+	srand(time(NULL));
+
+	for (int i = 0; i < PATH_NB; i++)
+	{
+		path_info_list[i] = (struct path_info *)malloc(sizeof(struct path_info));
+		memset(path_info_list[i], 0, sizeof(struct path_info));
+	}
 
 	// struct rte_ether_hdr *eth_hdr;
 	struct rte_ipv4_hdr *ipv4_hdr;
 	struct rte_udp_hdr *udp_hdr;
 	struct hopa_cp_hdr *hopa_cp_hdr;
 
+	uint64_t prev_tsc = 0, cur_tsc, diff_tsc;
+	uint64_t timer_resolution_cycles = rte_get_timer_hz() * 10 / 1000;
+
 	while (1)
 	{
+		// timer
+		cur_tsc = rte_get_timer_cycles();
+		diff_tsc = cur_tsc - prev_tsc;
+		if (diff_tsc > timer_resolution_cycles)
+		{
+			rte_timer_manage();
+			prev_tsc = cur_tsc;
+		}
+
 		// nb_rx = rte_eth_rx_burst(PORT_P0, 0, bufs, BURST_SIZE);
 		nb_rx = rte_ring_mc_dequeue_burst(hopa_in_out_ring_ins->hopa_in_ring, (void **)bufs, BURST_SIZE, NULL);
 
@@ -406,8 +487,8 @@ lcore_stats(__rte_unused void *arg)
 int main(int argc, char *argv[])
 {
 	struct hopa_in_out_ring *m_hopa_in_out_ring;
-	struct rte_mbuf *recv_mbuf[32] = {NULL};
-	struct rte_mbuf *send_mbuf[32] = {NULL};
+	struct rte_mbuf *recv_mbuf[BURST_SIZE] = {NULL};
+	struct rte_mbuf *send_mbuf[BURST_SIZE] = {NULL};
 
 	unsigned nb_ports;
 	uint16_t portid;
@@ -436,13 +517,11 @@ int main(int argc, char *argv[])
 	if (mbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
 
-	/* Initialize all ports. */
-	RTE_ETH_FOREACH_DEV(portid)
-	if (port_init(portid, mbuf_pool) != 0)
+	/* Initialize P0 port. */
+	if (port_init(PORT_P0, mbuf_pool) != 0)
 		rte_exit(EXIT_FAILURE, "Cannot init port %" PRIu16 "\n", portid);
 
-	// printf("core %d\n",rte_lcore_count());
-
+	/* ring buf */
 	m_hopa_in_out_ring = get_ring_instance();
 	if (m_hopa_in_out_ring == NULL)
 		rte_exit(EXIT_FAILURE, "ring buffer init failed\n");
@@ -469,6 +548,7 @@ int main(int argc, char *argv[])
 
 	while (1)
 	{
+		rte_timer_manage();
 		// rx
 		rx_num = rte_eth_rx_burst(PORT_P0, 0, recv_mbuf, BURST_SIZE);
 		if (rx_num > 0)
