@@ -59,7 +59,7 @@
 #define PORT_P0 (0)
 
 /* 预设比例 r */
-#define R (0.5)
+#define R (0.7)
 
 enum hopa_module
 {
@@ -86,12 +86,14 @@ struct hopa_param
     int is_sender; /* 1 -> sender. 0 -> receiver. */
 };
 
-/* 4 paths delta time */
-struct path_info
+/* current path */
+struct cur_path_info
 {
-    uint64_t max_dt; // 最大时间差
-    uint64_t min_dt; // 最小时间差
-    
+    uint8_t path_id;
+
+    uint64_t max_dt;
+    uint64_t min_dt;
+
     uint64_t last_3_dt_grad;
     uint64_t last_2_dt_grad;
     uint64_t last_1_dt_grad;
@@ -142,8 +144,8 @@ static inline int port_init(uint16_t port, struct rte_mempool *mbuf_pool);
 /* encode packet */
 static void fill_eth_header(struct rte_ether_hdr *eth_hdr);
 static void fill_ipv4_header(struct rte_ipv4_hdr *ipv4_hdr);
-static void fill_udp_header(struct rte_ipv4_hdr *ipv4_hdr, struct rte_udp_hdr *udp_hdr, uint8_t dst_port);
-static struct rte_mbuf *encode_udp_pkt(uint8_t dst_port);
+static void fill_udp_header(struct rte_ipv4_hdr *ipv4_hdr, struct rte_udp_hdr *udp_hdr, uint16_t dst_port);
+static struct rte_mbuf *encode_udp_pkt(uint16_t dst_port);
 static struct rte_mbuf *encode_probe_pkt(uint8_t path_id);
 static struct rte_mbuf *encode_repath_pkt(uint8_t repath_id);
 static struct rte_mbuf *encode_repath_ack_pkt();
@@ -152,9 +154,12 @@ static struct rte_mbuf *encode_repath_ack_pkt();
 static void hopa_cp_probe_pkt_progress(struct rte_mbuf *hopa_cp_mbuf);
 static void hopa_cp_repath_pkt_progress(struct rte_mbuf *hopa_cp_mbuf);
 static void hopa_cp_repath_ack_pkt_progress(struct rte_mbuf *hopa_cp_mbuf);
+static void hopa_dp_ts_pkt_progress(struct rte_mbuf *hopa_cp_mbuf);
 
-/* check */
-static int repath_check();
+/*  */
+static bool one_path_check();
+
+static uint8_t get_min_delay_path_id(uint64_t *all_paths_delay_list, int length);
 
 /* timer */
 static void timer_cb(__rte_unused struct rte_timer *timer, __rte_unused void *arg);

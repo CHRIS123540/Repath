@@ -1,17 +1,12 @@
 #include "hopa_cp.h"
+#include "hopa_log.h"
 
-/* Mempool */
 struct rte_mempool *mbuf_pool = NULL;
-
 struct hopa_in_out_ring *hopa_in_out_ring_ins = NULL;
-
-/* 4 paths info */
-struct path_info *path_info_list[PATH_NB];
-
-/* optimal path id */
-uint8_t opt_path_id = 1;
-
-struct rte_timer retran_timer; // 重传定时器
+uint64_t all_paths_delay_list[PATH_NB] = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
+struct cur_path_info *cur_path_info;
+uint8_t opt_path_id = 0;
+struct rte_timer retran_timer;
 
 static struct hopa_in_out_ring *get_ring_instance(void)
 {
@@ -175,7 +170,7 @@ fill_ipv4_header(struct rte_ipv4_hdr *ipv4_hdr)
 }
 
 static void
-fill_udp_header(struct rte_ipv4_hdr *ipv4_hdr, struct rte_udp_hdr *udp_hdr, uint8_t dst_port)
+fill_udp_header(struct rte_ipv4_hdr *ipv4_hdr, struct rte_udp_hdr *udp_hdr, uint16_t dst_port)
 {
 	udp_hdr->src_port = rte_cpu_to_be_16(SRC_PORT);
 	udp_hdr->dst_port = rte_cpu_to_be_16(dst_port);
@@ -183,7 +178,7 @@ fill_udp_header(struct rte_ipv4_hdr *ipv4_hdr, struct rte_udp_hdr *udp_hdr, uint
 	udp_hdr->dgram_cksum = rte_ipv4_udptcp_cksum(ipv4_hdr, udp_hdr);
 }
 
-static struct rte_mbuf *encode_udp_pkt(uint8_t dst_port)
+static struct rte_mbuf *encode_udp_pkt(uint16_t dst_port)
 {
 	struct rte_mbuf *mbuf;
 	struct rte_ether_hdr *eth_hdr;
@@ -277,6 +272,12 @@ static struct rte_mbuf *encode_repath_ack_pkt()
 	return mbuf;
 }
 
+static void timer_cb(__rte_unused struct rte_timer *timer, __rte_unused void *arg)
+{
+	printf("timer out\n");
+	rte_timer_reset(&retran_timer, rte_get_timer_hz() * 0.1, SINGLE, rte_lcore_id(), timer_cb, arg);
+}
+
 static void hopa_cp_probe_pkt_progress(struct rte_mbuf *hopa_cp_mbuf)
 {
 	struct rte_ipv4_hdr *ipv4_hdr;
@@ -289,41 +290,27 @@ static void hopa_cp_probe_pkt_progress(struct rte_mbuf *hopa_cp_mbuf)
 	udp_hdr = (struct rte_udp_hdr *)(ipv4_hdr + 1);
 	hopa_cp_hdr = (struct hopa_cp_hdr *)(udp_hdr + 1);
 
-	int path_id = rte_be_to_cpu_16(udp_hdr->dst_port) - DST_PORT_PATH_1;
+	uint8_t path_id = rte_be_to_cpu_16(udp_hdr->dst_port) - DST_PORT_PATH_1;
 
 	sender_ts = rte_be_to_cpu_64(hopa_cp_hdr->ts);
-	printf("sender ts (ns) : %" PRIu64 "\n", sender_ts);
 
 	struct timespec ts;
 	if (clock_gettime(0, &ts) == 0)
 	{
 		receiver_ts = (uint64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
-		printf("receiver ts (ns) : %" PRIu64 "\n", receiver_ts);
 	}
 	else
 		rte_exit(EXIT_FAILURE, "Error with clock_gettime\n");
 
-	if (receiver_ts > sender_ts)
-		path_info_list[path_id]->cur_dt = receiver_ts - sender_ts;
-	else
-		path_info_list[path_id]->cur_dt = sender_ts - receiver_ts;
+	all_paths_delay_list[path_id] = receiver_ts - sender_ts + 1000000000;
 
-	printf("path id : %d , sub (ns) : %" PRIu64 "\n", path_id + 1, path_info_list[path_id]->cur_dt);
+	// double delay = ((double)all_paths_delay_list[path_id] / 1000.0) / 1000.0;
 
-	// TODO   检测算法
-	int repath_id = repath_check();
-	if (repath_id != -1 && repath_id > 0)
-	{
-		struct rte_mbuf *repath_mbuf;
-		repath_mbuf = encode_repath_pkt((uint8_t)repath_id);
-		rte_ring_mp_enqueue_burst(hopa_in_out_ring_ins->hopa_out_ring, (void **)&repath_mbuf, 1, NULL);
-	}
-}
+	HOPA_LOG_TRACE("path id : %d , delay (us) : %" PRIu64 "", path_id, all_paths_delay_list[path_id]);
 
-static void timer_cb(__rte_unused struct rte_timer *timer, __rte_unused void *arg)
-{
-	printf("timer out\n");
-	rte_timer_reset(&retran_timer, rte_get_timer_hz() * 0.1, SINGLE, rte_lcore_id(), timer_cb, arg);
+	opt_path_id = get_min_delay_path_id(all_paths_delay_list, PATH_NB);
+
+	HOPA_LOG_INFO("opt_path_id = %d", opt_path_id);
 }
 
 static void hopa_cp_repath_pkt_progress(struct rte_mbuf *hopa_cp_mbuf)
@@ -345,44 +332,57 @@ static void hopa_cp_repath_ack_pkt_progress(struct rte_mbuf *hopa_cp_mbuf)
 	rte_timer_stop(&retran_timer);
 }
 
-static int repath_check()
+static void hopa_dp_ts_pkt_progress(struct rte_mbuf *hopa_cp_mbuf)
 {
-	printf("check pkt\n");
-
-	int i;
-
-	for (i = 0; i < PATH_NB; i++)
+	uint8_t is_repath = one_path_check(1);
+	if (is_repath)
 	{
-		path_info_list[i]->delta_t = path_info_list[i]->cur_ts - path_info_list[i]->last_ts;
-		/* 计算 max_dt min_dt */
-		if (path_info_list[i]->cur_dt > path_info_list[i]->max_dt)
-			path_info_list[i]->max_dt = path_info_list[i]->cur_dt;
-		if (path_info_list[i]->cur_dt < path_info_list[i]->min_dt)
-			path_info_list[i]->min_dt = path_info_list[i]->cur_dt;
+		struct rte_mbuf *repath_mbuf;
+		repath_mbuf = encode_repath_pkt((uint8_t)opt_path_id);
+		rte_ring_mp_enqueue_burst(hopa_in_out_ring_ins->hopa_out_ring, (void **)&repath_mbuf, 1, NULL);
+	}
+}
 
-		/* 计算 绝对取值 */
+static bool one_path_check()
+{
+	// TODO   随路检测算法 --->  换路时机
+	cur_path_info->delta_t = cur_path_info->cur_ts - cur_path_info->last_ts;
 
-		/* 浮点！！！ */
+	/* 计算 max_dt    min_dt */
+	if (cur_path_info->cur_dt > cur_path_info->max_dt)
+		cur_path_info->max_dt = cur_path_info->cur_dt;
+	if (cur_path_info->cur_dt < cur_path_info->min_dt)
+		cur_path_info->min_dt = cur_path_info->cur_dt;
 
-		path_info_list[i]->thres_dt = path_info_list[i]->min_dt + R * (path_info_list[i]->max_dt - path_info_list[i]->min_dt);
+	/* 计算 绝对取值 */
+	cur_path_info->thres_dt = cur_path_info->min_dt + R * (cur_path_info->max_dt - cur_path_info->min_dt);
 
-		/* 计算 相对取值 */
+	/* 计算 相对取值 */
+	cur_path_info->cur_dt_grad = (cur_path_info->cur_dt - cur_path_info->last_1_dt) / cur_path_info->delta_t;
 
-		/* 浮点！！！ */
+	bool b2 = 2 * cur_path_info->last_3_dt >= (cur_path_info->thres_dt - cur_path_info->min_dt);
+	bool b3 = cur_path_info->last_1_dt_grad > 0 && cur_path_info->last_2_dt_grad > 0 && cur_path_info->last_3_dt_grad > 0;
+	bool b4 = cur_path_info->cur_dt_grad >= (cur_path_info->thres_dt - cur_path_info->min_dt) / (2 * cur_path_info->delta_t);
+	bool is_try_repath = (b2 && b3) || b4;
 
-		path_info_list[i]->cur_dt_grad = (path_info_list[i]->cur_dt - path_info_list[i]->last_1_dt) / path_info_list[i]->delta_t;
+	bool is_force_repath = cur_path_info->cur_dt >= cur_path_info->thres_dt;
 
-		bool b1 = path_info_list[i]->cur_dt >= path_info_list[i]->thres_dt;
-		bool b2 = 2 * path_info_list[i]->last_3_dt >= (path_info_list[i]->thres_dt - path_info_list[i]->min_dt);
-		bool b3 = path_info_list[i]->last_1_dt_grad > 0 && path_info_list[i]->last_2_dt_grad > 0 && path_info_list[i]->last_3_dt_grad > 0;
-		bool b4 = path_info_list[i]->cur_dt_grad >= (path_info_list[i]->thres_dt - path_info_list[i]->min_dt) / (2 * path_info_list[i]->delta_t);
-		if (b1 || (b2 && b3) || b4)
+	return is_try_repath || is_force_repath;
+}
+
+static uint8_t get_min_delay_path_id(uint64_t *all_paths_delay_list, int length)
+{
+	uint8_t path_id = 0;
+
+	for (int i = 1; i < length; i++)
+	{
+		if (all_paths_delay_list[i] < all_paths_delay_list[path_id])
 		{
-			return i + 1;
+			path_id = i;
 		}
 	}
 
-	return 0;
+	return path_id;
 }
 
 static int
@@ -416,11 +416,7 @@ lcore_stats(__rte_unused void *arg)
 	rte_timer_init(&retran_timer);
 	srand(time(NULL));
 
-	for (int i = 0; i < PATH_NB; i++)
-	{
-		path_info_list[i] = (struct path_info *)malloc(sizeof(struct path_info));
-		memset(path_info_list[i], 0, sizeof(struct path_info));
-	}
+	cur_path_info = (struct cur_path_info *)malloc(sizeof(struct cur_path_info));
 
 	// struct rte_ether_hdr *eth_hdr;
 	struct rte_ipv4_hdr *ipv4_hdr;
@@ -475,6 +471,8 @@ lcore_stats(__rte_unused void *arg)
 							break;
 						}
 					}
+					else if (hopa_cp_hdr->flag == HOPA_DP)
+						hopa_dp_ts_pkt_progress(bufs[i]);
 				}
 			}
 		}
