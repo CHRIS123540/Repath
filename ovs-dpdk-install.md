@@ -8,7 +8,9 @@ DPU上原本的ovs和dpdk版本如下：
 
 ```textile
 root@localhost:~# ovs-vswitchd --version
+
 ovs-vswitchd (Open vSwitch) 2.17.2-24a81c8
+
 MLNX_DPDK 20.11.6.1.5
 ```
 
@@ -22,8 +24,11 @@ MLNX_DPDK 20.11.6.1.5
 
 ```bash
 # 下载源码，也可以上传
+
 wget http://fast.dpdk.org/rel/dpdk-21.11.6.tar.gz
+
 tar -zxvf dpdk-21.11.6.tar.xz
+
 cd dpdk-stable-21.11.6
 ```
 
@@ -33,18 +38,23 @@ cd dpdk-stable-21.11.6
 vim dpdk-stable-21.11.6/drivers/regex/octeontx2/meson.build
 ```
 
-将 `lib = cc.find_library('rxp_compiler', required: false)`  
+将 `lib = cc.find_library('rxp_compiler', required: false)`  
 
-改为 `lib = cc.find_library('rxpcompiler', required: false)` 
+改为 `lib = cc.find_library('rxpcompiler', required: false)`
 
 - 编译安装
 
 ```bash
 export DPDK_DIR=$PWD
+
 export DPDK_BUILD=$DPDK_DIR/build
+
 meson build
+
 ninja -C build
+
 ninja -C build install
+
 ldconfig
 ```
 
@@ -53,17 +63,14 @@ ldconfig
 - 使用 DPDK-21.11.6：
 
 ```bash
-mv /opt/mellanox/dpdk /opt/mellanox/dpdk_bak
+export PKG_CONFIG_PATH=/usr/local/lib/aarch64-linux-gnu/pkgconfig/
 ldconfig
 ```
 
 - 使用默认版本dpdk：
 
 ```bash
-cd dpdk-statble-21.11/build
-ninja uninstall
-mv /opt/mellanox/dpdk_bak /opt/mellanox/dpdk
-export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/opt/mellanox/dpdk/lib/aarch64-linux-gnu/pkgconfig
+export PKG_CONFIG_PATH=/opt/mellanox/dpdk/lib/aarch64-linux-gnu/pkgconfig
 ldconfig
 ```
 
@@ -83,19 +90,33 @@ pkg-config --modversion libdpdk
 
 ```bash
 # 自定义安装路径
+
 mkdir -p ovs/etc ovs/usr ovs/var
+
 # 下载源码，也可以上传
+
 wget https://www.openvswitch.org/releases/openvswitch-2.17.2.tar.gz
+
 tar -zxvf openvswitch-2.17.2.tar.gz
+
 cd openvswitch-2.17.2
+
 # 配置自定义目录及相关参数
+
 ./configure \
+
 --prefix=/home/zy/ovs-2/usr \
+
 --localstatedir=/home/zy/ovs-2/var \
+
 --sysconfdir=/home/zy/ovs-2/etc --with-dpdk=static
+
 # 编译
+
 make
+
 # 安装，安装在configure配置的目录中，后续运行的命令也在这些目录中
+
 make install
 ```
 
@@ -109,7 +130,9 @@ grep HugePages_ /proc/meminfo
 
 ```bash
 ovs/usr/share/openvswitch/scripts/ovs-ctl --system-id=random start
+
 ovs/usr/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true
+
 ovs/usr/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-socket-mem=1024
 ```
 
@@ -117,8 +140,11 @@ ovs/usr/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-socket-mem=
 
 ```bash
 ovs/usr/sbin/ovs-vswitchd --version
+
 ovs/usr/bin/ovs-vsctl get Open_vSwitch . dpdk_version
+
 # 确认是否初始化ovs-dpdk
+
 ovs/usr/bin/ovs-vsctl get Open_vSwitch . dpdk_initialized
 ```
 
@@ -130,8 +156,11 @@ ovs/usr/bin/ovs-vsctl get Open_vSwitch . dpdk_initialized
 
 ```bash
 # 关闭新ovs-dpdk的vswitchd
+
 ovs/usr/share/openvswitch/scripts/ovs-ctl stop
+
 # 重启原先的ovs
+
 /etc/init.d/openvswitch-switch restart
 ```
 
@@ -139,9 +168,36 @@ ovs/usr/share/openvswitch/scripts/ovs-ctl stop
 
 ```bash
 # 停止原先的ovs服务
+
 /etc/init.d/openvswitch-switch stop
+
 # 开启ovs-dpdk
+
 ovs/usr/share/openvswitch/scripts/ovs-ctl --system-id=random start
 ```
 
 - **重要：ovs-dpdk启动和配置的命令和方式可能有误，有新的或者正确的方式请添加或修改以上内容**
+
+---
+
+## 4 更新配置ovs-dpdk命令
+
+- 配置网桥
+  
+
+```bash
+# 查看ovs配置
+./ovs-vsctl list open-vswitch
+# 设置ovs配置
+./ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true
+./ovs-vsctl --no-wait set Open_vSwitch . other_config:hw-offload=true
+./ovs-vsctl set Open_vSwitch . other_config:dpdk-extra="-a 0000:03:00.1,representor=[0,65535],dv_flow_en=1,dv_xmeta_en=1,sys_mem_en=1"
+# 创建网桥
+./ovs-vsctl add-br ovsbr1 -- set Bridge ovsbr1 datapath_type=netdev -- br-set-external-id ovsbr1 bridge-id ovsbr1 -- set bridge ovsbr1 fail-mode=standalone
+# 添加p1
+./ovs-vsctl add-port ovsbr1 p1 -- set Interface p1 type=dpdk options:dpdk-devargs=0000:03:00.1
+# 添加pf1hpf
+./ovs-vsctl add-port ovsbr1 pf1hpf -- set Interface pf1hpf type=dpdk options:dpdk-devargs=0000:03:00.1,representor=[65535]
+# 重启ovs
+./ovs-ctl restart
+```
