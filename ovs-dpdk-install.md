@@ -102,9 +102,9 @@ wget https://www.openvswitch.org/releases/openvswitch-2.17.2.tar.gz
 tar -zxvf openvswitch-2.17.2.tar.gz
 
 cd openvswitch-2.17.2
-<<<<<<< HEAD
 
 # 配置自定义目录及相关参数
+
 
 ./configure \
 
@@ -114,13 +114,13 @@ cd openvswitch-2.17.2
 
 --sysconfdir=/home/zy/ovs-2/etc --with-dpdk=static
 
-=======
+
 # 配置自定义目录及相关参数， /path/修改为自己的ovs路径
 ./configure \
 --prefix=/path/ovs/usr \
 --localstatedir=/path/ovs/var \
 --sysconfdir=/path/ovs/etc --with-dpdk=static
->>>>>>> 9827356c67c8d81ee17908955248799a2f6be7a7
+
 # 编译
 
 make
