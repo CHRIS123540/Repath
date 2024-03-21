@@ -63,14 +63,16 @@ ldconfig
 - 使用 DPDK-21.11.6：
 
 ```bash
-export PKG_CONFIG_PATH=/usr/local/lib/aarch64-linux-gnu/pkgconfig/
+# 先移除之前的pkgconfig路径(/usr/local/lib/aarch64-linux-gnu/pkgconfig)，再导入当前的路径
+export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/usr/local/lib/aarch64-linux-gnu/pkgconfig
 ldconfig
 ```
 
 - 使用默认版本dpdk：
 
 ```bash
-export PKG_CONFIG_PATH=/opt/mellanox/dpdk/lib/aarch64-linux-gnu/pkgconfig
+# 先移除之前的pkgconfig路径(/usr/local/lib/aarch64-linux-gnu/pkgconfig)，再导入当前的路径
+export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/opt/mellanox/dpdk/lib/aarch64-linux-gnu/pkgconfig
 ldconfig
 ```
 
