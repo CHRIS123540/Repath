@@ -189,7 +189,7 @@ system_version      : "20.04-focal"
 ./ovs-vsctl set Open_vSwitch . other_config:dpdk-extra="-a 0000:03:00.1,representor=[0,65535],dv_flow_en=1,dv_xmeta_en=1,sys_mem_en=1"
 
 # 创建网桥
-./ovs-vsctl add-br ovsbr1 -- set Bridge ovsbr1 datapath_type=netdev -- br-set-external-id ovsbr1 bridge-id ovsbr1 -- set bridge ovsbr1 fail-mode=standalone
+./ovs-vsctl --no-wait add-br ovsbr1 -- set bridge ovsbr1 datapath_type=netdev
 
 # 添加p1
 ./ovs-vsctl add-port ovsbr1 p1 -- set Interface p1 type=dpdk options:dpdk-devargs=0000:03:00.1
