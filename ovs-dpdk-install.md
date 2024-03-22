@@ -83,10 +83,13 @@ pkg-config --modversion libdpdk
 ```bash
 # 自定义安装路径
 mkdir -p ovs/etc ovs/usr ovs/var
+
 # 下载源码，也可以上传
 wget https://www.openvswitch.org/releases/openvswitch-2.17.2.tar.gz
 tar -zxvf openvswitch-2.17.2.tar.gz
 cd openvswitch-2.17.2
+
+
 
 # 配置自定义目录及相关参数， /path/修改为自己的ovs路径
 ./configure \
@@ -96,6 +99,7 @@ cd openvswitch-2.17.2
 
 # 编译
 make
+
 # 安装，安装在configure配置的目录中，后续运行的命令也在这些目录中
 make install
 ```
@@ -152,32 +156,30 @@ ovs/usr/share/openvswitch/scripts/ovs-ctl --system-id=random start
 ## 4 更新配置ovs-dpdk命令
 
 - 为保证可用先确保配置为`flow-restore-wait="false"` ，或者不存在这个配置，暂时不知原因
-  
 
 ```bash
 root@localhost:/home/ubuntu/zhaoyi/ovs_workspace/ovs/usr/share/openvswitch/scripts# ../../../bin/ovs-vsctl list open-vswitch
-_uuid               : 966d2b68-9402-429d-af25-13c4ad104ac0
-bridges             : [e32d6bff-e555-419a-86cf-798095cf4aaa]
-cur_cfg             : 60
-datapath_types      : [netdev, system]
-datapaths           : {}
-db_version          : "8.3.0"
-dpdk_initialized    : true
-dpdk_version        : "DPDK 21.11.6"
-external_ids        : {hostname=localhost.localdomain, rundir="/home/ubuntu/zhaoyi/ovs_workspace/ovs/var/run/openvswitch", system-id="fa52701d-06df-4513-9b1e-66083eca1a3b"}
-iface_types         : [bareudp, dpdk, dpdkvhostuser, dpdkvhostuserclient, erspan, geneve, gre, gtpu, internal, ip6erspan, ip6gre, lisp, patch, stt, system, tap, vxlan]
-manager_options     : []
-next_cfg            : 60
-other_config        : {dpdk-extra="-a 0000:03:00.1,representor=[0,65535],dv_flow_en=1,dv_xmeta_en=1,sys_mem_en=1", dpdk-init="true", dpdk-socket-mem="1024", flow-restore-wait="false", hw-offload="true"}
-ovs_version         : "2.17.2"
-ssl                 : []
-statistics          : {}
-system_type         : Ubuntu
-system_version      : "20.04-focal"
+_uuid               : 966d2b68-9402-429d-af25-13c4ad104ac0
+bridges             : [e32d6bff-e555-419a-86cf-798095cf4aaa]
+cur_cfg             : 60
+datapath_types      : [netdev, system]
+datapaths           : {}
+db_version          : "8.3.0"
+dpdk_initialized    : true
+dpdk_version        : "DPDK 21.11.6"
+external_ids        : {hostname=localhost.localdomain, rundir="/home/ubuntu/zhaoyi/ovs_workspace/ovs/var/run/openvswitch", system-id="fa52701d-06df-4513-9b1e-66083eca1a3b"}
+iface_types         : [bareudp, dpdk, dpdkvhostuser, dpdkvhostuserclient, erspan, geneve, gre, gtpu, internal, ip6erspan, ip6gre, lisp, patch, stt, system, tap, vxlan]
+manager_options     : []
+next_cfg            : 60
+other_config        : {dpdk-extra="-a 0000:03:00.1,representor=[0,65535],dv_flow_en=1,dv_xmeta_en=1,sys_mem_en=1", dpdk-init="true", dpdk-socket-mem="1024", flow-restore-wait="false", hw-offload="true"}
+ovs_version         : "2.17.2"
+ssl                 : []
+statistics          : {}
+system_type         : Ubuntu
+system_version      : "20.04-focal"
 ```
 
 - 配置ovs-dpdk及网桥
-  
 
 ```bash
 # 查看ovs配置
@@ -197,11 +199,55 @@ system_version      : "20.04-focal"
 # 添加pf1hpf
 ./ovs-vsctl add-port ovsbr1 pf1hpf -- set Interface pf1hpf type=dpdk options:dpdk-devargs=0000:03:00.1,representor=[65535]
 
-# 重启ovs  (restart不太好用)
+# 重启ovs  (restart不太好用)
 # 先关闭
 ./ovs-ctl stop
 # 再开启(需要开启两次，不知道原因)
 # system-id可以使用--system-id=random代替
 ./ovs-ctl start --system-id="fa52701d-06df-4513-9b1e-66083eca1a3b"
 ./ovs-ctl start --system-id="fa52701d-06df-4513-9b1e-66083eca1a3b"
+```
+
+
+
+# 修改ovs-dpdk代码并重新编译运行
+
+- 修改代码，添加一段log，vswitchd/ovs-vswitchd.c中的main函数中，使用VLOG_INFO()函数
+
+```c
+int
+main(int argc, char *argv[])
+{ 
+
+            ......
+
+    while (!exiting) {
+        VLOG_INFO("main_ovs_info");
+        OVS_USDT_PROBE(main, run_start);
+        memory_run();
+
+            ......
+
+    return 0;
+}
+```
+
+- 卸载ovs-dpdk
+
+```bash
+cd openvswitch-2.17.2
+make uninstall
+```
+
+- 编译并安装ovs-dpdk
+
+```bash
+make
+make install
+```
+
+- 查询log输出
+
+```bash
+cat /home/ubuntu/zhaoyi/ovs_workspace/ovs/var/log/openvswitch/ovs-vswitchd.log | grep main_ovs_info
 ```
