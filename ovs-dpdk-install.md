@@ -62,7 +62,8 @@ ldconfig
 
 ```bash
 # 先移除之前的pkgconfig路径(/usr/local/lib/aarch64-linux-gnu/pkgconfig)，再导入当前的路径
-export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/opt/mellanox/dpdk/lib/aarch64-linux-gnu/pkgconfig
+```bash
+export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/opt/mellanox/dpdk/lib/aarch64-linux-gnu/pkgconfig:/opt/mellanox/doca/lib/aarch64-linux-gnu/pkgconfig
 ldconfig
 ```
 
@@ -89,19 +90,28 @@ wget https://www.openvswitch.org/releases/openvswitch-2.17.2.tar.gz
 tar -zxvf openvswitch-2.17.2.tar.gz
 cd openvswitch-2.17.2
 
-
-
 # 配置自定义目录及相关参数， /path/修改为自己的ovs路径
 ./configure \
 --prefix=/path/ovs/usr \
 --localstatedir=/path/ovs/var \
 --sysconfdir=/path/ovs/etc --with-dpdk=static
 
+# 如果要编译内核模块，需要指定--with-linux参数，将原本的内核文件openvswitch.ko删掉(备份在/home/ubuntu/zhaoyi/ovs_kernel_ko_bak/下)，移除内核模块(rmmod openvswitch)
+./configure \
+--prefix=/path/ovs/usr \
+--localstatedir=/path/ovs/var \
+--sysconfdir=/path/ovs/etc --with-dpdk=static \
+--with-linux=/lib/modules/`uname -r`/build
+
 # 编译
 make
 
 # 安装，安装在configure配置的目录中，后续运行的命令也在这些目录中
 make install
+
+# 如果编译了内核模块的话需要安装ko文件(加载内核模块:modprobe openvswitch,查看lsmod|grep openvswitch)，否则不用执行
+make modules_install
+
 ```
 
 - 查看大页，记得分配
@@ -121,6 +131,7 @@ ovs/usr/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-socket-mem=
 - 查询版本及配置
 
 ```bash
+ovs/usr/bin/ovs-vsctl list open-vswitch
 ovs/usr/sbin/ovs-vswitchd --version
 ovs/usr/bin/ovs-vsctl get Open_vSwitch . dpdk_version
 # 确认是否初始化ovs-dpdk
@@ -149,11 +160,7 @@ ovs/usr/share/openvswitch/scripts/ovs-ctl stop
 ovs/usr/share/openvswitch/scripts/ovs-ctl --system-id=random start
 ```
 
-- **重要：ovs-dpdk启动和配置的命令和方式可能有误，有新的或者正确的方式请添加或修改以上内容**
-
----
-
-## 4 更新配置ovs-dpdk命令
+## 4 配置ovs-dpdk命令
 
 - 为保证可用先确保配置为`flow-restore-wait="false"` ，或者不存在这个配置，暂时不知原因
 
@@ -208,9 +215,7 @@ system_version      : "20.04-focal"
 ./ovs-ctl start --system-id="fa52701d-06df-4513-9b1e-66083eca1a3b"
 ```
 
-
-
-# 修改ovs-dpdk代码并重新编译运行
+# 5 修改ovs-dpdk代码并重新编译运行(只单独编译用户态代码即可，内核态不用编译)
 
 - 修改代码，添加一段log，vswitchd/ovs-vswitchd.c中的main函数中，使用VLOG_INFO()函数
 
@@ -251,3 +256,5 @@ make install
 ```bash
 cat /home/ubuntu/zhaoyi/ovs_workspace/ovs/var/log/openvswitch/ovs-vswitchd.log | grep main_ovs_info
 ```
+
+- [带内核重新编译ovs](https://www.cnblogs.com/ssyfj/p/11901922.html)
