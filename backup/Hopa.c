@@ -129,6 +129,7 @@ fill_ethernet_header(struct rte_ether_hdr *hdr)
 {
 	struct rte_ether_addr s_addr = {{0x08, 0xc0, 0xeb, 0xbf, 0xef, 0x9a}};
 	struct rte_ether_addr d_addr = {{0x02, 0xb1, 0x04, 0x57, 0x76, 0x77}};
+	
 	//08:c0:eb:bf:ef:9a
 	//02:b1:04:57:76:77
 	hdr->s_addr = s_addr;
@@ -189,7 +190,7 @@ while(1)
 		fill_udp_header(udp_h);
 		udp_h->dst_port = rte_cpu_to_be_16(5678+i);
 		rte_eth_tx_burst(0, 1, &m, 1);//p0
-		sleep(1);
+		usleep(1000000);
 		rte_pktmbuf_free(m);
 
 	}
@@ -285,7 +286,7 @@ main(int argc, char *argv[])
 	nb_ports = rte_eth_dev_count_avail();
 	printf("NUM PORT %d\n",nb_ports);
 	if (nb_ports < 2 || (nb_ports & 1))
-	//	rte_exit(EXIT_FAILURE, "Error: number of ports must be even\n");
+		rte_exit(EXIT_FAILURE, "Error: number of ports must be even\n");
 
 	/* Creates a new mempool in memory to hold the mbufs. */
 	mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS * nb_ports,
