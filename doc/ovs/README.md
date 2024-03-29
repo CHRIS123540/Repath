@@ -32,16 +32,16 @@ rate-show
 
 打开两个终端
 终端1 加载模块+启动P4程序
-![这是一个示例图片](./image/1709044602271.jpg)
+![这是一个示例图片](../../image/1709044602271.jpg)
 
 终端2 加载流表
-![这是一个示例图片](./image/1709044602252.jpg)
+![这是一个示例图片](../../image/1709044602252.jpg)
 
 终端1 加载端口配置
-![这是一个示例图片](./image/1709044602260.jpg)
+![这是一个示例图片](../../image/1709044602260.jpg)
 
 终端1 最终效果iperf打一条流
-![这是一个示例图片](./image/1709044289926.jpg)
+![这是一个示例图片](../../image/1709044289926.jpg)
 
 ***网卡工具***
 ```
@@ -161,7 +161,7 @@ Ctrl s 或者Ctrl a/ b/c  (我没用上）
 密码:0penBmc    (我没用上）
 ```
 出现如下界面后
-![image](https://github.com/CHRIS123540/Repath/blob/main/image/%E5%BE%AE%E4%BF%A1%E5%9B%BE%E7%89%87_20240306184459.png)
+![image](../../image/微信图片_20240306184459.png)
 
 ```
 输入以下两条命令
@@ -169,7 +169,7 @@ echo 0 > /sys/class/i2c-adapter/i2c-12/12-0031/pwr_main_n
 echo 1 > /sys/class/i2c-adapter/i2c-12/12-0031/pwr_main_n; sol.sh
 ```
 等运行完毕，界面如下
-![image](https://github.com/CHRIS123540/Repath/blob/main/image/%E5%BE%AE%E4%BF%A1%E5%9B%BE%E7%89%87_20240306184612.png)
+![image](../../image/微信图片_20240306184612.png)
 
 输入P4交换机的用户名和密码
 打开交换机
