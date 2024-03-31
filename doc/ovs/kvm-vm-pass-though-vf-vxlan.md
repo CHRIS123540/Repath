@@ -90,9 +90,9 @@ virsh start vm_name
 - 拓扑
   
 
-![](../../image/topo.png)
+![拓扑](../../image/topo.png)
 
-- CQ-DPU ARM上OVS_DPDK构建拓扑,YY同理
+- CQ-DPU ARM上OVS_DPDK构建拓扑,YY同理 (以p0为例)
   
 
 ```bash
@@ -102,36 +102,36 @@ virsh start vm_name
 -- br-set-external-id br-int bridge-id br-int \
 -- set bridge br-int fail-mode=standalone 
 
-# 向br-int网桥添加pf1hpf 
-./ovs-vsctl add-port br-int pf1hpf \
--- set Interface pf1hpf type=dpdk options:dpdk-devargs=0000:03:00.1,representor=[65535]
+# 向br-int网桥添加pf0hpf 
+./ovs-vsctl add-port br-int pf0hpf \
+-- set Interface pf0hpf type=dpdk options:dpdk-devargs=0000:03:00.0,representor=[65535]
 
-# 向br-int网桥添加pf1vf0 
-./ovs-vsctl add-port br-int pf1hpf \
--- set Interface pf1hpf type=dpdk options:dpdk-devargs=0000:03:00.1,representor=[0]
+# 向br-int网桥添加pf0vf0 
+./ovs-vsctl add-port br-int pf0vf0 \
+-- set Interface pf0vf0 type=dpdk options:dpdk-devargs=0000:03:00.0,representor=[0]
 
-# 向br-int网桥添加pf1vf1 
-./ovs-vsctl add-port br-int pf1hpf \
--- set Interface pf1hpf type=dpdk options:dpdk-devargs=0000:03:00.1,representor=[1]
+# 向br-int网桥添加pf0vf1 
+./ovs-vsctl add-port br-int pf0vf1 \
+-- set Interface pf0vf1 type=dpdk options:dpdk-devargs=0000:03:00.0,representor=[1]
 # 以上三者应该可以一次性添加,参数 : representor=[0-1,65535]
 
-# 向br-int网桥添加vxlan0,指定remote_ip=172.168.1.1
+# 向br-int网桥添加vxlan0,指定remote_ip=192.168.240.1
 ./ovs-vsctl add-port br-int vxlan0 \
--- set interface vxlan0 type=vxlan options:remote_ip=172.168.1.1
+-- set interface vxlan0 type=vxlan options:remote_ip=192.168.240.1
 
 # 创建br-phy网桥,用于解析arp等报文
 ./ovs-vsctl --may-exist add-br br-phy \
 -- set Bridge br-phy datapath_type=netdev \
 -- br-set-external-id br-phy bridge-id br-phy \
 -- set bridge br-phy fail-mode=standalone \
-other_config:hwaddr=08:c0:eb:bf:ef:9f
+other_config:hwaddr=08:c0:eb:bf:ef:86
 
-# 向br-int网桥添加p1
-./ovs-vsctl --timeout 10 add-port br-phy p1 \
--- set Interface p1 type=dpdk options:dpdk-devargs=0000:03:00.1
+# 向br-int网桥添加p0
+./ovs-vsctl --timeout 10 add-port br-phy p0 \
+-- set Interface p0 type=dpdk options:dpdk-devargs=0000:03:00.0
 
 # 配置br-phy网桥
-ip addr add 172.168.1.2/24 dev br-phy
+ip addr add 192.168.240.2/24 dev br-phy
 ip link set br-phy up
 iptables -F
 ```
@@ -141,8 +141,8 @@ iptables -F
 
 ```bash
 # 为直通网卡的KVM VM配置ip (VM的HOST为CQ)
-ifconfig enp8s0 up 192.168.201.10/24
+ifconfig enp8s0 up 192.168.200.10/24
 
 # 从VM ping YY-HOST
-ping 192.168.201.1
+ping 192.168.200.1
 ```
