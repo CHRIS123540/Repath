@@ -1,4 +1,0 @@
-libopenvswitch_0 {
-global:
-        *;
-};

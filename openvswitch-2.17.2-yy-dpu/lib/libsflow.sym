@@ -1,4 +1,0 @@
-libsflow_0 {
-global:
-        *;
-};

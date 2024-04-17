@@ -1,4 +1,0 @@
-libovsdb_0 {
-global:
-        *;
-};
