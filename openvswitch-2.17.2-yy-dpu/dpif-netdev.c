@@ -8517,6 +8517,56 @@ static void
 dp_netdev_recirculate(struct dp_netdev_pmd_thread *pmd,
                       struct dp_packet_batch *packets)
 {
+    if ((m_hopa_cp_in_out_ring != NULL) && (m_hopa_cp_in_out_ring->hopa_cp_in_ring != NULL)){
+        // HOPA CP receive
+        struct rte_ether_hdr *eth_hdr;
+        struct rte_ipv4_hdr *ipv4_hdr;
+        struct rte_udp_hdr *udp_hdr;
+        // struct hopa_cp_hdr *hopa_cp_hdr;
+        int cp_nb = 0;
+        for (int i = 0; i < packets->count; i++)
+        {
+            struct rte_mbuf pkt = packets->packets[i]->mbuf;
+                    
+            eth_hdr = rte_pktmbuf_mtod_offset(&pkt, struct rte_ether_hdr *, 0);
+            //VLOG_INFO("eth_hdr->ether_type : [%" PRIu16 "]", rte_cpu_to_be_16(eth_hdr->ether_type));
+
+            if(eth_hdr->ether_type == rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4))
+            {
+                ipv4_hdr = rte_pktmbuf_mtod_offset(&pkt, struct rte_ipv4_hdr *, sizeof(struct rte_ether_hdr));
+                //VLOG_INFO("ipv4_hdr->next_proto_id : [%d]", ipv4_hdr->next_proto_id);
+
+                if (ipv4_hdr->next_proto_id == IPPROTO_UDP)
+                {
+                    udp_hdr = (struct rte_udp_hdr *)(ipv4_hdr + 1);
+
+                    //VLOG_INFO("udp_hdr->dgram_len : [%" PRIu16 "]", rte_be_to_cpu_16(udp_hdr->dgram_len));
+                    //VLOG_INFO("udp_hdr->src_port : [%" PRIu16 "]", rte_be_to_cpu_16(udp_hdr->src_port));
+                    if (
+                        (rte_be_to_cpu_16(udp_hdr->dgram_len) == (sizeof(struct rte_udp_hdr) + sizeof(struct hopa_cp_hdr))) 
+                        & (rte_be_to_cpu_16(udp_hdr->src_port) == 4444)
+                        & (pkt.pkt_len == sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) + sizeof(struct rte_udp_hdr) + sizeof(struct hopa_cp_hdr))
+                        ) // HOPA
+                    {
+                        //VLOG_INFO("received hopa_cp");
+                        VLOG_INFO("pkt.pkt_len : [%" PRIu32 "] , pkt.data_len : [%" PRIu16 "]", pkt.pkt_len, pkt.data_len);
+
+                        hopa_cp_recv_cp_hdr[cp_nb] = rte_malloc("hopa_cp_hdr", sizeof(struct hopa_cp_hdr), 0);
+
+                        // hopa_cp_hdr = (struct hopa_cp_hdr *)(udp_hdr + 1);
+
+                        rte_memcpy(hopa_cp_recv_cp_hdr[cp_nb], udp_hdr + 1, sizeof(struct hopa_cp_hdr));
+
+                        cp_nb++;
+                    }
+                }
+            }
+        }
+
+        if(cp_nb)
+            rte_ring_sp_enqueue_burst(m_hopa_cp_in_out_ring->hopa_cp_in_ring, (void **)hopa_cp_recv_cp_hdr, cp_nb, NULL);
+    }
+    
     dp_netdev_input__(pmd, packets, true, 0);
 }
 
