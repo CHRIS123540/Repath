@@ -2448,9 +2448,45 @@ netdev_dpdk_rxq_recv(struct netdev_rxq *rxq, struct dp_packet_batch *batch,
         return EAGAIN;
     }
 
-    nb_rx = rte_eth_rx_burst(rx->port_id, rxq->queue_id,
+    /*nb_rx = rte_eth_rx_burst(rx->port_id, rxq->queue_id,
                              (struct rte_mbuf **) batch->packets,
-                             NETDEV_MAX_BURST);
+                             NETDEV_MAX_BURST);*/
+                            
+    // HOPA CP
+    if(strcmp(rxq->netdev->name,"pf1hpf"))
+    {
+        nb_rx = rte_eth_rx_burst(rx->port_id, rxq->queue_id,
+                                (struct rte_mbuf **) batch->packets,
+                                NETDEV_MAX_BURST);
+    }
+    else // pf1hpf
+    {
+        int nb_cp;
+        if ((m_hopa_cp_in_out_ring != NULL) && (m_hopa_cp_in_out_ring->hopa_cp_out_ring != NULL))
+            nb_cp = rte_ring_count(m_hopa_cp_in_out_ring->hopa_cp_out_ring);
+        else
+            nb_cp = 0;
+            
+        if (!nb_cp)
+            nb_rx = rte_eth_rx_burst(rx->port_id, rxq->queue_id,
+                                (struct rte_mbuf **) batch->packets,
+                                NETDEV_MAX_BURST);
+        else
+        {
+            nb_rx = rte_eth_rx_burst(rx->port_id, rxq->queue_id,
+                                (struct rte_mbuf **) batch->packets,
+                                NETDEV_MAX_BURST - nb_cp);
+
+            rte_ring_sc_dequeue_burst(m_hopa_cp_in_out_ring->hopa_cp_out_ring, (void **)hopa_cp_send_mbuf, nb_cp, NULL);
+
+            for (int i = 0; i < nb_cp; i++)
+                batch->packets[i + nb_rx]->mbuf = *hopa_cp_send_mbuf[i];
+            nb_rx = nb_rx + nb_cp;
+            
+            VLOG_INFO("nb_cp : [%d]",nb_cp);
+        }
+    }
+
     if (!nb_rx) {
         return EAGAIN;
     }

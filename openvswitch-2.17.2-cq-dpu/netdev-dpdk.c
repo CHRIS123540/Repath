@@ -750,8 +750,10 @@ dpdk_mp_create(struct netdev_dpdk *dev, int mtu, bool per_port_mp)
                                           mbuf_priv_data_len,
                                           mbuf_size,
                                           socket_id);
+        // VLOG_INFO("mp_name:%s,n_mbufs:%" PRIu32 ",mbuf_priv_data_len:%" PRIu32 ",mbuf_size:%" PRIu32 ",socket_id:%d", mp_name, n_mbufs, mbuf_priv_data_len, mbuf_size, socket_id);
 
-        if (dmp->mp) {
+        if (dmp->mp)
+        {
             VLOG_DBG("Allocated \"%s\" mempool with %u mbufs",
                      mp_name, n_mbufs);
             /* rte_pktmbuf_pool_create has done some initialization of the
@@ -760,7 +762,9 @@ dpdk_mp_create(struct netdev_dpdk *dev, int mtu, bool per_port_mp)
              */
             rte_mempool_obj_iter(dmp->mp, ovs_rte_pktmbuf_init, NULL);
             return dmp;
-        } else if (rte_errno == EEXIST) {
+        }
+        else if (rte_errno == EEXIST)
+        {
             /* A mempool with the same name already exists.  We just
              * retrieve its pointer to be returned to the caller. */
             dmp->mp = rte_mempool_lookup(mp_name);
@@ -770,7 +774,9 @@ dpdk_mp_create(struct netdev_dpdk *dev, int mtu, bool per_port_mp)
             VLOG_DBG("A mempool with name \"%s\" already exists at %p.",
                      mp_name, dmp->mp);
             return dmp;
-        } else {
+        }
+        else
+        {
             VLOG_DBG("Failed to create mempool \"%s\" with a request of "
                      "%u mbufs, retrying with %u mbufs",
                      mp_name, n_mbufs, n_mbufs / 2);
@@ -2223,6 +2229,10 @@ netdev_dpdk_eth_tx_burst(struct netdev_dpdk *dev, int qid,
 
         ret = rte_eth_tx_burst(dev->port_id, qid, pkts + nb_tx,
                                nb_tx_prep - nb_tx);
+
+        /* test info */
+        // VLOG_INFO("rte_eth_tx_burst count : %"PRIu32"", ret);
+
         if (!ret) {
             break;
         }
@@ -2448,9 +2458,46 @@ netdev_dpdk_rxq_recv(struct netdev_rxq *rxq, struct dp_packet_batch *batch,
         return EAGAIN;
     }
 
-    nb_rx = rte_eth_rx_burst(rx->port_id, rxq->queue_id,
-                             (struct rte_mbuf **) batch->packets,
-                             NETDEV_MAX_BURST);
+    /*nb_rx = rte_eth_rx_burst(rx->port_id, rxq->queue_id,
+                                (struct rte_mbuf **) batch->packets,
+                                NETDEV_MAX_BURST);*/
+
+    // HOPA CP
+    if(strcmp(rxq->netdev->name,"pf1hpf"))
+    {
+        nb_rx = rte_eth_rx_burst(rx->port_id, rxq->queue_id,
+                                (struct rte_mbuf **) batch->packets,
+                                NETDEV_MAX_BURST);
+    }
+    else // pf1hpf
+    {
+        int nb_cp;
+        if ((m_hopa_cp_in_out_ring != NULL) && (m_hopa_cp_in_out_ring->hopa_cp_out_ring != NULL))
+            nb_cp = rte_ring_count(m_hopa_cp_in_out_ring->hopa_cp_out_ring);
+        else
+            nb_cp = 0;
+            
+        if (!nb_cp)
+            nb_rx = rte_eth_rx_burst(rx->port_id, rxq->queue_id,
+                                (struct rte_mbuf **) batch->packets,
+                                NETDEV_MAX_BURST);
+        else
+        {
+            nb_rx = rte_eth_rx_burst(rx->port_id, rxq->queue_id,
+                                (struct rte_mbuf **) batch->packets,
+                                NETDEV_MAX_BURST - nb_cp);
+
+            rte_ring_sc_dequeue_burst(m_hopa_cp_in_out_ring->hopa_cp_out_ring, (void **)hopa_cp_send_mbuf, nb_cp, NULL);
+
+            for (int i = 0; i < nb_cp; i++)
+                batch->packets[i + nb_rx]->mbuf = *hopa_cp_send_mbuf[i];
+            nb_rx = nb_rx + nb_cp;
+            
+            VLOG_INFO("nb_cp : [%d]",nb_cp);
+        }
+    }
+    
+
     if (!nb_rx) {
         return EAGAIN;
     }
